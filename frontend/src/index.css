@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
+  --color-primary: #1e40af;
+  --color-primary-dark: #1e3a8a;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
