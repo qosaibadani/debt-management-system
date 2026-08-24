@@ -19,32 +19,39 @@ class PaymentController extends Controller
         $this->ledgerService = $ledgerService;
     }
 
+    /**
+     * تسجيل سداد جديد وإرجاع بيانات الواتساب للتأكيد
+     */
     public function store(Request $request)
     {
         $validated = $request->validate([
             'customer_business_code' => 'required|exists:customers,business_code',
             'amount' => 'required|numeric|min:0.001',
-            'payment_method' => 'nullable|string|max:50', // جعلناه اختياري هنا وسنضع قيمة افتراضية
+            'payment_method' => 'required|string|max:50',
             'reference_number' => 'nullable|string|max:100',
             'description' => 'nullable|string|max:500',
-            'date' => 'nullable|date',
         ]);
 
-        $customer = Customer::where('business_code', $validated['customer_business_code'])->firstOrFail();
+        return DB::transaction(function () use ($request, $validated) {
+            // جلب العميل مع قفل لضمان دقة الحسابات المالية أثناء السداد
+            $customer = Customer::where('business_code', $validated['customer_business_code'])
+                ->where('store_id', auth()->user()->store_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        return DB::transaction(function () use ($request, $validated, $customer) {
+            // 1. إنشاء سجل السداد
             $payment = Payment::create([
                 'store_id' => $customer->store_id,
                 'customer_id' => $customer->id,
                 'business_code' => 'PAY-' . strtoupper(Str::random(8)),
                 'amount' => $validated['amount'],
-                'payment_method' => $validated['payment_method'] ?? 'cash', // إذا لم يرسل، نفترض أنها نقداً
+                'payment_method' => $validated['payment_method'],
                 'reference_number' => $request->input('reference_number'),
                 'description' => $request->input('description'),
-                'created_at' => $request->input('date') ?? now(), // تسجيل التاريخ المختار
                 'created_by' => auth()->id(),
             ]);
 
+            // 2. تسجيل العملية في دفتر الأستاذ (تحديث أرصدة العميل تلقائياً)
             $this->ledgerService->recordEntry(
                 $customer,
                 'payment',
@@ -54,13 +61,24 @@ class PaymentController extends Controller
                 $request->input('description')
             );
 
+            // 3. جلب البيانات المحدثة للرسالة
+            $updatedCustomer = $customer->fresh();
+            $store = auth()->user()->store;
+
             return response()->json([
                 'message' => 'تم تسجيل الدفعة بنجاح',
-                'data' => $payment
+                'data' => $payment,
+                'current_balance' => (float)$updatedCustomer->current_balance,
+                'customer_name' => $updatedCustomer->name,
+                'customer_phone' => $updatedCustomer->phone,
+                'store_name' => $store->name ?? 'متجرنا'
             ], 201);
         });
     }
 
+    /**
+     * عرض قائمة المدفوعات
+     */
     public function index(Request $request)
     {
         $query = Payment::with('customer')

@@ -76,11 +76,34 @@ const Customers = () => {
   const handleDebtSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/debts', {
+      const response = await api.post('/debts', {
         customer_business_code: selectedCustomer.business_code,
         ...transactionData
       });
+      
       toast.success('تم تسجيل الدين بنجاح');
+      
+      // منطق إرسال الواتساب
+      const { customer_name, customer_phone, current_balance, store_name } = response.data;
+      const amount = transactionData.amount;
+      const description = transactionData.description || 'مشتريات متنوعة';
+      
+      // صياغة الرسالة
+      const message = `*تنبيه مالي من ${store_name}* 🏪\n\n` +
+                      `عزيزي العميل: *${customer_name}*\n` +
+                      `تم تسجيل دين جديد بمبلغ: *${formatNumber(amount)}* ر.س\n` +
+                      `البيان: ${description}\n\n` +
+                      `*إجمالي مديونيتك الحالية: ${formatNumber(current_balance)} ر.س*\n\n` +
+                      `شكراً لتعاملك معنا. 🙏`;
+
+      // تجهيز الرابط (نضيف مفتاح الدولة إذا لم يكن موجوداً، هنا افترضنا 967 لليمن)
+      const cleanPhone = customer_phone.replace(/\D/g, '');
+      const finalPhone = cleanPhone.startsWith('967') ? cleanPhone : `967${cleanPhone}`;
+      const whatsappUrl = `https://wa.me/${finalPhone}?text=${encodeURIComponent(message )}`;
+
+      // فتح الواتساب في نافذة جديدة
+      window.open(whatsappUrl, '_blank');
+
       setShowDebtModal(false);
       setTransactionData({ amount: '', description: '', payment_method: 'cash', due_date: '' });
       fetchCustomers();
@@ -92,11 +115,32 @@ const Customers = () => {
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/payments', {
+      const response = await api.post('/payments', {
         customer_business_code: selectedCustomer.business_code,
         ...transactionData
       });
+      
       toast.success('تم تسجيل السداد بنجاح');
+
+      // منطق إرسال الواتساب للسداد
+      const { customer_name, customer_phone, current_balance, store_name } = response.data;
+      const amount = transactionData.amount;
+      const method = transactionData.payment_method === 'cash' ? 'نقداً' : 
+                     transactionData.payment_method === 'transfer' ? 'تحويل بنكي' : 'شيك';
+      
+      const message = `*تأكيد عملية سداد من ${store_name}* ✅\n\n` +
+                      `عزيزي العميل: *${customer_name}*\n` +
+                      `شكراً لك، تم استلام مبلغ سداد وقدره: *${formatNumber(amount)}* ر.س\n` +
+                      `طريقة السداد: ${method}\n\n` +
+                      `*رصيدك المتبقي الحالي هو: ${formatNumber(current_balance)} ر.س*\n\n` +
+                      `نسعد دائماً بخدمتكم. ✨`;
+
+      const cleanPhone = customer_phone.replace(/\D/g, '');
+      const finalPhone = cleanPhone.startsWith('967') ? cleanPhone : `967${cleanPhone}`;
+      const whatsappUrl = `https://wa.me/${finalPhone}?text=${encodeURIComponent(message )}`;
+
+      window.open(whatsappUrl, '_blank');
+
       setShowPaymentModal(false);
       setTransactionData({ amount: '', description: '', payment_method: 'cash', due_date: '' });
       fetchCustomers();
